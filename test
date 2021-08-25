@@ -9,7 +9,7 @@ pipeline {
         }
         stage('call aws') {
             steps {
-                //implementation
+               echo 'call aws'  //implementation
             }
         }
     }
