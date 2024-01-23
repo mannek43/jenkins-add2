@@ -1,0 +1,65 @@
+name: Pull Request Automation
+
+on:
+  pull_request:
+    types: [opened, reopened, edited]
+
+jobs:
+  checklist-and-package-info:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'  # Replace with the Node.js version you need
+
+      - name: Install jq (for JSON processing)
+        run: sudo apt-get install jq
+
+      - name: Update PR Checklist
+        run: |
+          # Checklist items
+          checklist=(
+            "Ensure development tasks are complete"
+            "Validate code locally"
+            "Run Apex tests"
+            "Specify targeted release"
+            # Add more checklist items if needed
+          )
+
+          checklist_text=$(printf " - [ ] %s\n" "${checklist[@]}")
+          body=$(jq -n --arg body "$checklist_text" '$body + $body')
+
+          curl -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{\"body\": \"$body\"}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}"
+
+      - name: Calculate Changed Packages
+        run: |
+          changed_files=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+          changed_packages=""
+          for file in $changed_files; do
+            case "$file" in
+              src/core/*) changed_packages="$changed_packages,core" ;;
+              src/cdm/*) changed_packages="$changed_packages,cdm" ;;
+              src/commerce/*) changed_packages="$changed_packages,commerce" ;;
+              # Add more package conditions if needed
+            esac
+          done
+
+          changed_packages=$(echo "${changed_packages:1}")  # Remove leading comma
+
+          if [[ ! -z "$changed_packages" ]]; then
+            curl -X PATCH \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"title\": \"[${changed_packages}] ${{ github.event.pull_request.title }}\"}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}"
+          fi
